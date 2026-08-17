@@ -27,6 +27,8 @@ source("01_config.R")
 cat("Configuration loaded.\n")
 
 # Step 1: Scrape
+# If the regular scraper gets HTTP 403 errors, switch to browser mode:
+#   source("02_scrape_browser.R")  # instead of 02_scrape.R
 source("02_scrape.R")
 cat("\n--- STEP 1: SCRAPING ---\n")
 docs <- scrape_all(DATE_START, DATE_END)

@@ -13,7 +13,8 @@ required_packages <- c(
   "dplyr",       # data wrangling
   "tidyr",       # reshaping
   "purrr",       # functional programming
-  "readr"        # file I/O
+  "readr",       # file I/O
+  "digest"       # hashing for document IDs
 )
 
 for (pkg in required_packages) {
@@ -37,6 +38,15 @@ if (!file.exists(model_path)) {
   cat("Model downloaded.\n")
 } else {
   cat("Ukrainian udpipe model already present.\n")
+}
+
+# Optional: install chromote for browser-based scraping
+# (needed only if president.gov.ua blocks regular HTTP requests)
+if (!requireNamespace("chromote", quietly = TRUE)) {
+  cat("\nNote: 'chromote' is not installed. If the regular scraper\n")
+  cat("gets HTTP 403 errors, install it for browser-based scraping:\n")
+  cat("  install.packages('chromote')\n")
+  cat("Then use 02_scrape_browser.R instead of 02_scrape.R\n\n")
 }
 
 cat("\nSetup complete. You can now run the other scripts.\n")
