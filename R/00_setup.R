@@ -5,8 +5,7 @@
 
 required_packages <- c(
   "rvest",       # web scraping
-
-"httr",        # HTTP requests
+  "httr",        # HTTP requests
   "jsonlite",    # JSON I/O
   "udpipe",      # NLP: tokenisation, lemmatisation, POS tagging (Ukrainian)
   "stringr",     # string manipulation
@@ -25,7 +24,7 @@ for (pkg in required_packages) {
 
 # Download Ukrainian udpipe model (≈50 MB, one-time download)
 library(udpipe)
-model_dir <- file.path("R", "models")
+model_dir <- file.path("models")
 dir.create(model_dir, showWarnings = FALSE, recursive = TRUE)
 model_path <- file.path(model_dir, "ukrainian-iu-ud-2.5-191206.udpipe")
 

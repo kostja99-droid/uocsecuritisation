@@ -23,7 +23,7 @@ library(purrr)
 
 # ── Load the udpipe model ────────────────────────────────
 load_udpipe_model <- function() {
-  model_files <- list.files("R/models", pattern = "\\.udpipe$", full.names = TRUE)
+  model_files <- list.files("models", pattern = "\\.udpipe$", full.names = TRUE)
   if (length(model_files) == 0) {
     stop("No udpipe model found. Run 00_setup.R first.")
   }
