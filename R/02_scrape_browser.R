@@ -1,18 +1,17 @@
 # ──────────────────────────────────────────────────────────
-# 02_scrape_browser.R — Browser-based scraper (Chromote)
+# 02_scrape_browser.R — Stealth browser-based scraper (Chromote)
 #
 # Use this instead of 02_scrape.R if president.gov.ua blocks
-# regular HTTP requests with a 403 error.
+# regular HTTP requests. Uses anti-detection measures to avoid
+# Akamai bot fingerprinting.
 #
 # REQUIRES: Google Chrome or Chromium installed on your system.
+#   install.packages("chromote")
 #
 # Usage:
 #   source("01_config.R")
 #   source("02_scrape_browser.R")
 #   docs <- scrape_all(DATE_START, DATE_END)
-#
-# To install chromote:
-#   install.packages("chromote")
 # ──────────────────────────────────────────────────────────
 
 library(chromote)
@@ -21,59 +20,103 @@ library(jsonlite)
 library(stringr)
 library(dplyr)
 
-# ── Browser session management ───────────────────────────
-.browser <- NULL
+# ── Browser session management (stealth mode) ────────────
+.chrome_process <- NULL
 .browser_session <- NULL
 
 start_browser <- function() {
-  if (is.null(.browser)) {
-    cat("Starting headless browser...\n")
-    .browser <<- ChromoteSession$new()
+  if (is.null(.browser_session)) {
+    cat("Starting stealth browser...\n")
+    chrome <- Chrome$new(args = c(
+      "--disable-blink-features=AutomationControlled",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-extensions",
+      "--window-size=1920,1080",
+      "--start-maximized",
+      "--lang=uk-UA"
+    ))
+    .chrome_process <<- chrome
+    b <- ChromoteSession$new(parent = chrome)
+
+    # Remove webdriver flag that Akamai detects
+    b$Runtime$evaluate(
+      "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    # Override plugins to look like a real browser
+    b$Runtime$evaluate(paste0(
+      "Object.defineProperty(navigator, 'plugins', {",
+      "get: () => [1,2,3,4,5]",
+      "})"
+    ))
+    # Override languages
+    b$Runtime$evaluate(paste0(
+      "Object.defineProperty(navigator, 'languages', {",
+      "get: () => ['uk-UA', 'uk', 'en-US', 'en']",
+      "})"
+    ))
+
+    # Set a real user-agent via CDP
+    b$Network$setUserAgentOverride(
+      userAgent = USER_AGENT,
+      acceptLanguage = "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+      platform = "Win32"
+    )
+
+    .browser_session <<- b
     Sys.sleep(2)
-    cat("Browser ready.\n")
+    cat("Stealth browser ready.\n")
   }
-  invisible(.browser)
+  invisible(.browser_session)
 }
 
 stop_browser <- function() {
-  if (!is.null(.browser)) {
-    tryCatch(.browser$close(), error = function(e) NULL)
-    .browser <<- NULL
-    cat("Browser closed.\n")
+  if (!is.null(.browser_session)) {
+    tryCatch(.browser_session$close(), error = function(e) NULL)
+    .browser_session <<- NULL
   }
+  if (!is.null(.chrome_process)) {
+    tryCatch(.chrome_process$close(), error = function(e) NULL)
+    .chrome_process <<- NULL
+  }
+  cat("Browser closed.\n")
 }
 
-# ── Fetch a page using headless Chrome ───────────────────
+# ── Fetch a page using stealth Chrome ────────────────────
 fetch_page <- function(url, retries = MAX_RETRIES) {
-  b <- start_browser()
   for (attempt in seq_len(retries)) {
+    b <- start_browser()
     Sys.sleep(runif(1, REQUEST_DELAY[1], REQUEST_DELAY[2]))
     tryCatch({
       b$Page$navigate(url)
-      Sys.sleep(3)
+      Sys.sleep(4)
+
+      # Check if we got an Access Denied page
+      title_result <- b$Runtime$evaluate("document.title")
+      page_title <- title_result$result$value
+      if (!is.null(page_title) && grepl("Access Denied", page_title, ignore.case = TRUE)) {
+        message(sprintf("  [attempt %d/%d] Access Denied for %s", attempt, retries, url))
+        # Restart browser with fresh session
+        stop_browser()
+        if (attempt < retries) Sys.sleep(2^attempt + runif(1, 1, 3))
+        next
+      }
+
       result <- b$Runtime$evaluate("document.documentElement.outerHTML")
       html <- result$result$value
-      if (is.null(html) || nchar(html) < 200) {
+      if (is.null(html) || nchar(html) < 500) {
         message(sprintf("  [attempt %d/%d] Page too small (%d chars) for %s",
                         attempt, retries,
                         if (is.null(html)) 0 else nchar(html), url))
-        if (attempt < retries) {
-          stop_browser()
-          .browser <<- NULL
-          Sys.sleep(2^attempt)
-        }
+        stop_browser()
+        if (attempt < retries) Sys.sleep(2^attempt)
         next
       }
       return(html)
     }, error = function(e) {
       message(sprintf("  [attempt %d/%d] Error: %s", attempt, retries, e$message))
-      if (attempt < retries) {
-        tryCatch({
-          stop_browser()
-          .browser <<- NULL
-        }, error = function(e2) NULL)
-        Sys.sleep(2^attempt)
-      }
+      tryCatch(stop_browser(), error = function(e2) NULL)
+      if (attempt < retries) Sys.sleep(2^attempt)
     })
   }
   return(NULL)
@@ -105,8 +148,7 @@ parse_uk_date <- function(text) {
   return(NA_character_)
 }
 
-# ── Parsing functions (same as 02_scrape.R) ──────────────
-# These are identical to the httr version — only fetch_page differs.
+# ── Parsing functions ────────────────────────────────────
 
 parse_listing_page <- function(html_text) {
   page <- read_html(html_text)
