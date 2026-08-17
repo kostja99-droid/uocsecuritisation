@@ -2,20 +2,40 @@
 # run_all.R — One-command entry point: scrape + analyse
 #
 # Usage:
-#   In RStudio, set your working directory to the folder
-#   containing these R files, then:
-#     source("run_all.R")
+#   In RStudio, just click "Source" on this file — it will
+#   automatically set the working directory to its own folder.
 #
 #   Or from the command line:
-#     cd ~/MA_Thesis/R_Code
-#     Rscript run_all.R
+#     Rscript path/to/run_all.R
 #
 # After running, use the sampling tools interactively:
-#   source("01_config.R")
 #   source("04_sample.R")
 #   sample_claims(category = "ontological_security", n = 10, random = TRUE)
 #   verify_document("<doc_id>")
 # ──────────────────────────────────────────────────────────
+
+# Auto-detect script location and set working directory
+this_dir <- tryCatch(
+  dirname(rstudioapi::getSourceEditorContext()$path),
+  error = function(e) {
+    args <- commandArgs(trailingOnly = FALSE)
+    file_arg <- grep("^--file=", args, value = TRUE)
+    if (length(file_arg) > 0) {
+      return(dirname(normalizePath(sub("^--file=", "", file_arg[1]))))
+    }
+    if (sys.nframe() > 0) {
+      frame <- sys.frame(1)
+      if (exists("ofile", envir = frame)) {
+        return(dirname(normalizePath(get("ofile", envir = frame))))
+      }
+    }
+    return(getwd())
+  }
+)
+if (nzchar(this_dir) && dir.exists(this_dir)) {
+  setwd(this_dir)
+  cat(sprintf("Working directory set to: %s\n\n", this_dir))
+}
 
 cat("========================================\n")
 cat("Ukrainian Presidential Speech Scraper\n")
