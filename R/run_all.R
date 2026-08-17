@@ -46,13 +46,31 @@ cat("========================================\n\n")
 source("01_config.R")
 cat("Configuration loaded.\n")
 
-# Step 1: Scrape
-# If the regular scraper gets HTTP 403 errors, switch to browser mode:
-#   source("02_scrape_browser.R")  # instead of 02_scrape.R
-source("02_scrape.R")
-cat("\n--- STEP 1: SCRAPING ---\n")
-docs <- scrape_all(DATE_START, DATE_END)
-cat(sprintf("Scraping complete: %d documents\n", nrow(docs)))
+# Step 1: Import or Scrape
+# Option A (recommended): Import from browser-exported JSON
+#   Run js/fetch_articles_quick.js in your browser console first,
+#   then place speech_articles_clean.json in the data/ folder.
+# Option B: Direct scraping (often blocked by Akamai CDN)
+#   source("02_scrape.R")  # or 02_scrape_browser.R
+
+json_path <- file.path("..", "data", "speech_articles_clean.json")
+csv_path  <- file.path("..", "data", "Pres_speeches2018_2025.csv")
+
+cat("\n--- STEP 1: IMPORTING CORPUS ---\n")
+if (file.exists(json_path)) {
+  source("02_import_and_analyse.R")
+  docs <- import_articles(json_path, csv_path)
+  cat(sprintf("Import complete: %d documents\n", nrow(docs)))
+} else {
+  cat(sprintf("JSON not found at %s\n", normalizePath(json_path, mustWork = FALSE)))
+  cat("To create it:\n")
+  cat("  1. Open https://www.president.gov.ua in Chrome\n")
+  cat("  2. F12 -> Console\n")
+  cat("  3. Paste js/fetch_articles_quick.js, press Enter\n")
+  cat("  4. Wait ~5 min, save speech_articles_clean.json to data/\n")
+  cat("  5. Re-run this script\n")
+  stop("Missing article data. See instructions above.")
+}
 
 # Step 2: Analyse
 source("03_analyse.R")
