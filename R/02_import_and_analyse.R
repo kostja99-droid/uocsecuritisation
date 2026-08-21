@@ -95,9 +95,30 @@ extract_date_from_text <- function(text) {
   return(NA_character_)
 }
 
+# ── Resolve the best date from multiple sources ──────────
+resolve_date <- function(json_date, map_date, body_text = NULL) {
+  # 1. Try date_mapping (from fetch_dates_only.js — most reliable)
+  if (!is.null(map_date) && nchar(map_date) > 3) {
+    d <- parse_uk_date(map_date)
+    if (!is.na(d) && !grepl("^202[6-9]", d)) return(d)
+  }
+  # 2. Try JSON-exported date (often wrong — picks up page header)
+  if (!is.null(json_date) && nchar(json_date) > 3) {
+    d <- parse_uk_date(json_date)
+    if (!is.na(d) && !grepl("^202[6-9]", d)) return(d)
+  }
+  # 3. Try extracting from body text
+  if (!is.null(body_text)) {
+    d <- extract_date_from_text(body_text)
+    if (!is.na(d)) return(d)
+  }
+  return(NA_character_)
+}
+
 # ── Import articles from browser-exported JSON ───────────
-import_articles <- function(json_path = "data/speech_articles_clean.json",
-                            csv_path  = NULL) {
+import_articles <- function(json_path = "speech_articles_clean.json",
+                            csv_path  = NULL,
+                            date_mapping_path = NULL) {
   dir.create(CORPUS_DIR, recursive = TRUE, showWarnings = FALSE)
 
   if (!file.exists(json_path)) {
@@ -111,19 +132,35 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
   articles <- fromJSON(json_path, simplifyDataFrame = FALSE)
   cat(sprintf("  Loaded %d articles\n", length(articles)))
 
-  # Diagnostic: show sample dates (from JSON and from body text extraction)
-  cat("\n  Sample date extraction (first 10 articles):\n")
+  # Load date mapping if available (from fetch_dates_only.js)
+  date_map <- list()
+  if (is.null(date_mapping_path)) {
+    # Auto-detect: look next to the JSON file
+    candidate <- file.path(dirname(json_path), "date_mapping.json")
+    if (file.exists(candidate)) date_mapping_path <- candidate
+    # Also check current directory
+    if (is.null(date_mapping_path) && file.exists("date_mapping.json")) {
+      date_mapping_path <- "date_mapping.json"
+    }
+  }
+  if (!is.null(date_mapping_path) && file.exists(date_mapping_path)) {
+    date_map <- fromJSON(date_mapping_path, simplifyDataFrame = FALSE)
+    cat(sprintf("  Loaded %d date mappings from %s\n", length(date_map), date_mapping_path))
+  } else {
+    cat("  No date_mapping.json found — dates may be inaccurate.\n")
+    cat("  Run js/fetch_dates_only.js in your browser to fix dates.\n")
+  }
+
+  # Diagnostic: show sample dates
+  cat("\n  Sample date resolution (first 10 articles):\n")
   for (a in head(articles, 10)) {
-    raw <- if (is.null(a$date)) "" else a$date
-    parsed <- parse_uk_date(raw)
-    from_body <- if (!is.null(a$body_text)) extract_date_from_text(a$body_text) else NA
-    # Use body text date if JSON date is clearly wrong
-    final <- parsed
-    if (!is.na(final) && grepl("^202[6-9]", final)) final <- NA_character_
-    if (is.na(final) && !is.na(from_body)) final <- from_body
-    cat(sprintf("    JSON: '%s' -> %s | body: %s | final: %s\n",
-                substr(raw, 1, 40), parsed,
-                if (is.na(from_body)) "(none)" else from_body,
+    url <- a$url
+    raw_json <- if (is.null(a$date)) "" else a$date
+    raw_map  <- if (!is.null(date_map[[url]])) date_map[[url]] else ""
+    # Prefer date_mapping, fall back to JSON, fall back to body text
+    final <- resolve_date(raw_json, raw_map, a$body_text)
+    cat(sprintf("    map: '%s' | final: %s\n",
+                substr(raw_map, 1, 40),
                 if (is.na(final)) "NA" else final))
   }
   cat("\n")
@@ -152,15 +189,9 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
     did <- substr(digest(url, algo = "md5"), 1, 12)
     doc_path <- file.path(CORPUS_DIR, paste0(did, ".json"))
 
-    # Parse date — the JS snippet may grab the page header date (today)
-    # instead of the article date, so also try extracting from body text
-    date_str <- parse_uk_date(art$date)
-    if (!is.na(date_str) && grepl("^202[6-9]", date_str)) {
-      date_str <- NA_character_  # clearly wrong (today's date, not article date)
-    }
-    if (is.na(date_str)) {
-      date_str <- extract_date_from_text(body_text)
-    }
+    # Resolve date from best available source
+    raw_map <- if (!is.null(date_map[[url]])) date_map[[url]] else ""
+    date_str <- resolve_date(art$date, raw_map, body_text)
 
     # Use CSV title if article title is empty
     title <- art$title
