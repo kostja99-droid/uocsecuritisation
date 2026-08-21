@@ -283,7 +283,8 @@ compute_summary <- function(results) {
 
   # Yearly breakdown
   years <- vapply(results, function(r) {
-    if (!is.na(r$date) && nchar(r$date) >= 4) substr(r$date, 1, 4) else "unknown"
+    d <- r$date
+    if (!is.null(d) && length(d) == 1 && !is.na(d) && nchar(d) >= 4) substr(d, 1, 4) else "unknown"
   }, character(1))
   yearly <- data.frame(year = years, stringsAsFactors = FALSE)
   yearly$type <- vapply(results, function(r) r$content_type, character(1))
@@ -306,7 +307,7 @@ compute_summary <- function(results) {
   juncture_summary <- lapply(names(JUNCTURES), function(jname) {
     jrange <- JUNCTURES[[jname]]
     j_results <- Filter(function(r) {
-      !is.na(r$date) && r$date >= jrange[1] && r$date <= jrange[2]
+      !is.null(r$date) && length(r$date) == 1 && !is.na(r$date) && r$date >= jrange[1] && r$date <= jrange[2]
     }, results)
     j_relevant <- Filter(function(r) r$is_relevant, j_results)
     j_claims   <- if (length(j_results) > 0) sum(vapply(j_results, function(r) length(r$claims), integer(1))) else 0L
