@@ -40,17 +40,29 @@ uk_months <- c(
 parse_uk_date <- function(text) {
   if (is.na(text) || text == "") return(NA_character_)
   text <- trimws(text)
+  # ISO format: 2024-12-25 or 2024-12-25T10:00:00+02:00
   if (grepl("^\\d{4}-\\d{2}-\\d{2}", text)) return(substr(text, 1, 10))
-  if (grepl("^\\d{2}\\.\\d{2}\\.\\d{4}$", text)) {
-    parts <- strsplit(text, "\\.")[[1]]
+  # Dot format: 25.12.2024
+  if (grepl("^\\d{2}\\.\\d{2}\\.\\d{4}", text)) {
+    parts <- strsplit(sub("\\s.*", "", text), "\\.")[[1]]
     return(sprintf("%s-%s-%s", parts[3], parts[2], parts[1]))
   }
+  # Strip trailing "року" / "р." that Ukrainian dates often have
+  text <- sub("\\s*(року|р\\.)\\s*$", "", text)
+  # Ukrainian text: "25 грудня 2024" or "5 січня 2023"
   m <- str_match(text, "(\\d{1,2})\\s+(\\S+)\\s+(\\d{4})")
   if (!is.na(m[1, 1])) {
     day   <- sprintf("%02d", as.integer(m[1, 2]))
     month <- uk_months[tolower(m[1, 3])]
     year  <- m[1, 4]
     if (!is.na(month)) return(sprintf("%s-%s-%s", year, month, day))
+  }
+  # Try month-first: "грудня 2024" (day missing, use 1st)
+  m2 <- str_match(text, "(\\S+)\\s+(\\d{4})")
+  if (!is.na(m2[1, 1])) {
+    month <- uk_months[tolower(m2[1, 2])]
+    year  <- m2[1, 3]
+    if (!is.na(month)) return(sprintf("%s-%s-01", year, month))
   }
   return(NA_character_)
 }
@@ -70,6 +82,16 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
   cat(sprintf("Reading %s...\n", json_path))
   articles <- fromJSON(json_path, simplifyDataFrame = FALSE)
   cat(sprintf("  Loaded %d articles\n", length(articles)))
+
+  # Diagnostic: show sample raw dates so we can verify parsing
+  sample_dates <- head(Filter(Negate(is.null),
+    lapply(articles, function(a) a$date)), 10)
+  cat("\n  Sample raw dates from JSON:\n")
+  for (d in sample_dates) {
+    parsed <- parse_uk_date(d)
+    cat(sprintf("    '%s'  ->  %s\n", substr(d, 1, 60), parsed))
+  }
+  cat("\n")
 
   # If a CSV with titles was also provided, use it to fill in missing titles
   csv_titles <- list()
@@ -104,8 +126,9 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
       title <- csv_titles[[url]]
     }
 
-    # Determine content type from URL
-    content_type <- if (grepl("/speeches", url)) "speech" else "press_release"
+    # All URLs from the speeches listing page are speeches
+    # (the URL path is /news/<slug>, not /news/speeches/<slug>)
+    content_type <- "speech"
 
     doc <- list(
       id           = did,
