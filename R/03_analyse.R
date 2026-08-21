@@ -268,22 +268,27 @@ compute_summary <- function(results) {
 
   # All claims
   all_claims <- unlist(lapply(results, function(r) r$claims), recursive = FALSE)
+  if (is.null(all_claims)) all_claims <- list()
 
   # Claims by category
-  claim_cats <- table(sapply(all_claims, function(c) c$category))
+  claim_cats <- if (length(all_claims) > 0) {
+    table(vapply(all_claims, function(c) c$category, character(1)))
+  } else { table(character(0)) }
 
   # Claims by term
-  claim_terms <- table(sapply(all_claims, function(c) c$matched_term_lemma))
+  claim_terms <- if (length(all_claims) > 0) {
+    table(vapply(all_claims, function(c) c$matched_term_lemma, character(1)))
+  } else { table(character(0)) }
   claim_terms <- sort(claim_terms, decreasing = TRUE)
 
   # Yearly breakdown
-  years <- sapply(results, function(r) {
+  years <- vapply(results, function(r) {
     if (!is.na(r$date) && nchar(r$date) >= 4) substr(r$date, 1, 4) else "unknown"
-  })
+  }, character(1))
   yearly <- data.frame(year = years, stringsAsFactors = FALSE)
-  yearly$type <- sapply(results, function(r) r$content_type)
-  yearly$is_relevant <- sapply(results, function(r) r$is_relevant)
-  yearly$n_claims <- sapply(results, function(r) length(r$claims))
+  yearly$type <- vapply(results, function(r) r$content_type, character(1))
+  yearly$is_relevant <- vapply(results, function(r) r$is_relevant, logical(1))
+  yearly$n_claims <- vapply(results, function(r) length(r$claims), integer(1))
 
   yearly_summary <- yearly %>%
     group_by(year) %>%
@@ -304,7 +309,7 @@ compute_summary <- function(results) {
       !is.na(r$date) && r$date >= jrange[1] && r$date <= jrange[2]
     }, results)
     j_relevant <- Filter(function(r) r$is_relevant, j_results)
-    j_claims   <- sum(sapply(j_results, function(r) length(r$claims)))
+    j_claims   <- if (length(j_results) > 0) sum(vapply(j_results, function(r) length(r$claims), integer(1))) else 0L
     data.frame(
       juncture      = jname,
       date_range    = paste(jrange, collapse = " to "),
@@ -325,7 +330,7 @@ compute_summary <- function(results) {
       relevant_speeches = length(rel_speech),
       relevant_press    = length(rel_press),
       total_claims      = length(all_claims),
-      unique_sentences  = length(unique(sapply(all_claims, function(c) c$sentence)))
+      unique_sentences  = if (length(all_claims) > 0) length(unique(vapply(all_claims, function(c) c$sentence, character(1)))) else 0L
     ),
     claims_by_category = as.data.frame(claim_cats),
     top_terms          = head(as.data.frame(claim_terms), 30),
