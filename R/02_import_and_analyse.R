@@ -67,6 +67,34 @@ parse_uk_date <- function(text) {
   return(NA_character_)
 }
 
+# ── Extract a date from the first few lines of body text ──
+extract_date_from_text <- function(text) {
+  # Look in the first 500 chars for a Ukrainian date pattern
+  snippet <- substr(text, 1, 500)
+
+  # Try "25 грудня 2024 року" or "25 грудня 2024"
+  m <- str_match(snippet, "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")
+  if (!is.na(m[1, 1])) {
+    day   <- sprintf("%02d", as.integer(m[1, 2]))
+    month <- uk_months[tolower(m[1, 3])]
+    year  <- m[1, 4]
+    if (!is.na(month) && as.integer(year) >= 2018 && as.integer(year) <= 2025) {
+      return(sprintf("%s-%s-%s", year, month, day))
+    }
+  }
+
+  # Try dd.mm.yyyy
+  m2 <- str_match(snippet, "(\\d{2})\\.(\\d{2})\\.(\\d{4})")
+  if (!is.na(m2[1, 1])) {
+    year <- m2[1, 4]
+    if (as.integer(year) >= 2018 && as.integer(year) <= 2025) {
+      return(sprintf("%s-%s-%s", m2[1, 4], m2[1, 3], m2[1, 2]))
+    }
+  }
+
+  return(NA_character_)
+}
+
 # ── Import articles from browser-exported JSON ───────────
 import_articles <- function(json_path = "data/speech_articles_clean.json",
                             csv_path  = NULL) {
@@ -83,13 +111,20 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
   articles <- fromJSON(json_path, simplifyDataFrame = FALSE)
   cat(sprintf("  Loaded %d articles\n", length(articles)))
 
-  # Diagnostic: show sample raw dates so we can verify parsing
-  sample_dates <- head(Filter(Negate(is.null),
-    lapply(articles, function(a) a$date)), 10)
-  cat("\n  Sample raw dates from JSON:\n")
-  for (d in sample_dates) {
-    parsed <- parse_uk_date(d)
-    cat(sprintf("    '%s'  ->  %s\n", substr(d, 1, 60), parsed))
+  # Diagnostic: show sample dates (from JSON and from body text extraction)
+  cat("\n  Sample date extraction (first 10 articles):\n")
+  for (a in head(articles, 10)) {
+    raw <- if (is.null(a$date)) "" else a$date
+    parsed <- parse_uk_date(raw)
+    from_body <- if (!is.null(a$body_text)) extract_date_from_text(a$body_text) else NA
+    # Use body text date if JSON date is clearly wrong
+    final <- parsed
+    if (!is.na(final) && grepl("^202[6-9]", final)) final <- NA_character_
+    if (is.na(final) && !is.na(from_body)) final <- from_body
+    cat(sprintf("    JSON: '%s' -> %s | body: %s | final: %s\n",
+                substr(raw, 1, 40), parsed,
+                if (is.na(from_body)) "(none)" else from_body,
+                if (is.na(final)) "NA" else final))
   }
   cat("\n")
 
@@ -117,8 +152,15 @@ import_articles <- function(json_path = "data/speech_articles_clean.json",
     did <- substr(digest(url, algo = "md5"), 1, 12)
     doc_path <- file.path(CORPUS_DIR, paste0(did, ".json"))
 
-    # Parse date
+    # Parse date — the JS snippet may grab the page header date (today)
+    # instead of the article date, so also try extracting from body text
     date_str <- parse_uk_date(art$date)
+    if (!is.na(date_str) && grepl("^202[6-9]", date_str)) {
+      date_str <- NA_character_  # clearly wrong (today's date, not article date)
+    }
+    if (is.na(date_str)) {
+      date_str <- extract_date_from_text(body_text)
+    }
 
     # Use CSV title if article title is empty
     title <- art$title

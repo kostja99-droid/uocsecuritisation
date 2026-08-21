@@ -102,9 +102,24 @@
       }
 
       let date = '';
-      for (const s of ['time[datetime]', 'time', '.date', '.article_date', '.created']) {
-        const el = doc.querySelector(s);
-        if (el) { date = el.getAttribute('datetime') || el.textContent.trim(); break; }
+      // Look for date inside article content area first, then fall back
+      const articleArea = doc.querySelector('.article_content, .news_content, article, main, #content') || doc;
+      for (const s of ['.article_date time', '.news_date time', '.date time',
+                        '.article_date', '.news_date', '.created',
+                        'time[datetime]']) {
+        const el = articleArea.querySelector(s) || doc.querySelector(s);
+        if (el) {
+          const dt = el.getAttribute('datetime');
+          if (dt && !dt.includes('2026')) { date = dt; break; }
+          const txt = el.textContent.trim();
+          if (txt && !txt.includes('2026')) { date = txt; break; }
+        }
+      }
+      // Fallback: extract date from body text (first Ukrainian date found)
+      if (!date || date.includes('2026')) {
+        const bodyText = (body || '').substring(0, 500);
+        const dateMatch = bodyText.match(/(\d{1,2})\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\s+(\d{4})/);
+        if (dateMatch) date = dateMatch[0];
       }
 
       let body = '';
