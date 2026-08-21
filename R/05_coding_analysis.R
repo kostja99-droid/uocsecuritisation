@@ -37,7 +37,7 @@ load_and_prepare_claims <- function(claims_file = file.path(OUTPUT_DIR, "claims.
       claim_id       = as.integer(c$claim_id),
       doc_id         = c$doc_id,
       doc_title      = if (is.null(c$doc_title)) NA_character_ else c$doc_title,
-      doc_date       = if (is.null(c$doc_date) || is.na(c$doc_date)) NA_character_ else c$doc_date,
+      doc_date       = if (is.null(c$doc_date) || length(c$doc_date) == 0 || is.na(c$doc_date)) NA_character_ else c$doc_date,
       doc_url        = c$doc_url,
       category       = c$category,
       matched_term   = c$matched_term_lemma,
