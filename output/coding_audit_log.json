@@ -1,0 +1,19 @@
+{
+  "coder": "Claude Opus 4.6",
+  "coding_date": "2026-08-26",
+  "model_version": "claude-opus-4-6",
+  "approach_hash": "bac038fd87129307",
+  "total_claims_coded": 937,
+  "securitising_claims": 63,
+  "non_securitising_claims": 874,
+  "securitising_rate_pct": 6.72,
+  "documents_with_securitisation": 14,
+  "documents_total": 95,
+  "audit_sample_size": 126,
+  "coding_approach": "Copenhagen School securitisation coding via Claude Opus 4.6.\nEach claim read in context (sentence + before/after) against codebook section 5 decision fields.\nSecuritising = constitutes a securitising speech act regarding UOC-MP / Moscow-affiliated church structures.\nReferent object = what is being protected/secured.\nThreat actor = who/what is framed as the threat.\nExtraordinary measure = what exceptional action is proposed/taken.",
+  "category_correctness": {
+    "yes": 930,
+    "partial": 5,
+    "no": 2
+  }
+}
