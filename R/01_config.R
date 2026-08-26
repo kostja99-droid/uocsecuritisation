@@ -13,12 +13,26 @@ CATEGORIES <- list(
   speeches = list(
     label    = "Speeches and addresses",
     path     = "/news/speeches",
-    type     = "speech"
+    type     = "speech",
+    source   = "president.gov.ua"
   ),
   press_releases = list(
     label    = "News / Press releases",
     path     = "/news/all",
-    type     = "press_release"
+    type     = "press_release",
+    source   = "president.gov.ua"
+  ),
+  rada_stenograms = list(
+    label    = "Rada plenary stenograms",
+    path     = "/meeting/stenogr/",
+    type     = "rada_stenogram",
+    source   = "rada.gov.ua"
+  ),
+  sbu_releases = list(
+    label    = "SBU press releases",
+    path     = "/news",
+    type     = "sbu_press_release",
+    source   = "sbu.gov.ua"
   )
 )
 
