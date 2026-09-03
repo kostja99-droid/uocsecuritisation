@@ -333,72 +333,76 @@ scrape_rada_stenograms <- function(start_id = 6700, end_id = 9000,
   result
 }
 
-#' Backfill missing dates in saved Rada stenogram JSON files
+#' Backfill dates using rada_date_mapping.json and clean invalid files
 #'
-#' Scans each JSON file's body_text for Ukrainian date patterns
-#' and updates the date field if it was NA.
+#' Uses the date mapping from the browser script to assign dates,
+#' and removes fake stenogram files (IDs not in the mapping).
 #'
-#' @param corpus_dir  Path to corpus directory (default CORPUS_DIR)
-#' @param overwrite   If TRUE, replace existing dates too (default FALSE)
-#' @return Number of dates filled
-backfill_rada_dates <- function(corpus_dir = CORPUS_DIR, overwrite = FALSE) {
+#' @param mapping_path Path to rada_date_mapping.json
+#' @param corpus_dir   Path to corpus directory (default CORPUS_DIR)
+#' @param clean        If TRUE, delete Rada files with no matching date (default TRUE)
+#' @return Tibble of valid stenograms
+backfill_rada_dates <- function(mapping_path = file.path("data", "rada_date_mapping.json"),
+                                 corpus_dir = CORPUS_DIR,
+                                 clean = TRUE) {
+  if (!file.exists(mapping_path)) {
+    stop(sprintf(
+      "Date mapping not found: %s\n\nTo create it:\n  1. Open rada.gov.ua in Chrome\n  2. F12 -> Console\n  3. Run the date extraction script from 02_scrape_rada.R docs\n  4. Save rada_date_mapping.json to data/\n",
+      mapping_path))
+  }
+
+  date_map <- fromJSON(mapping_path)
+  cat(sprintf("Loaded %d dates from %s\n", length(date_map), mapping_path))
+
   json_files <- list.files(corpus_dir, pattern = "\\.json$", full.names = TRUE)
-  filled <- 0
-  checked <- 0
+  updated <- 0
+  removed <- 0
+  kept <- 0
 
   for (f in json_files) {
     doc <- tryCatch(fromJSON(f), error = function(e) NULL)
     if (is.null(doc)) next
     if (!identical(doc$content_type, "rada_stenogram")) next
-    checked <- checked + 1
 
-    current_date <- doc$date
-    if (!overwrite && !is.null(current_date) && !is.na(current_date) &&
-        nchar(current_date) >= 10) next
+    rada_id <- as.character(doc$rada_id)
 
-    body <- doc$body_text
-    if (is.null(body) || nchar(body) < 50) next
-
-    new_date <- NA_character_
-
-    # Search ALL Ukrainian month dates in full body, take first in 2000-2025
-    all_dates <- str_match_all(body,
-      "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")[[1]]
-    if (nrow(all_dates) > 0) {
-      for (i in seq_len(nrow(all_dates))) {
-        yr <- as.integer(all_dates[i, 4])
-        if (yr >= 2000 && yr <= 2025) {
-          new_date <- parse_uk_date(all_dates[i, 1])
-          break
-        }
-      }
-    }
-
-    # Fallback: dd.mm.yyyy in full body, filtered to 2000-2025
-    if (is.na(new_date)) {
-      all_dot <- str_match_all(body,
-        "(\\d{2})\\.\\s*(\\d{2})\\.\\s*(\\d{4})")[[1]]
-      if (nrow(all_dot) > 0) {
-        for (i in seq_len(nrow(all_dot))) {
-          yr <- as.integer(all_dot[i, 4])
-          if (yr >= 2000 && yr <= 2025) {
-            new_date <- sprintf("%s-%s-%s", all_dot[i, 4], all_dot[i, 3], all_dot[i, 2])
-            break
-          }
-        }
-      }
-    }
-
-    if (!is.na(new_date)) {
-      doc$date <- new_date
+    if (!is.null(date_map[[rada_id]])) {
+      doc$date <- date_map[[rada_id]]
       write_json(doc, f, auto_unbox = TRUE, pretty = TRUE)
-      filled <- filled + 1
-      cat(sprintf("  [%s] %s -> %s\n",
-                  basename(f), ifelse(is.na(current_date), "NA", current_date),
-                  new_date))
+      updated <- updated + 1
+      kept <- kept + 1
+    } else if (clean) {
+      file.remove(f)
+      removed <- removed + 1
+    } else {
+      kept <- kept + 1
     }
   }
 
-  cat(sprintf("\nBackfill complete: %d/%d stenograms updated\n", filled, checked))
-  invisible(filled)
+  cat(sprintf("\nBackfill complete:\n  Dates assigned: %d\n  Invalid files removed: %d\n  Total kept: %d\n",
+              updated, removed, kept))
+
+  # Rebuild index
+  if (updated > 0) {
+    index_files <- list.files(corpus_dir, pattern = "\\.json$", full.names = TRUE)
+    all_docs <- list()
+    for (f in index_files) {
+      d <- tryCatch(fromJSON(f), error = function(e) NULL)
+      if (!is.null(d) && identical(d$content_type, "rada_stenogram")) {
+        for (nm in names(d)) {
+          if (is.null(d[[nm]]) || length(d[[nm]]) == 0) d[[nm]] <- NA_character_
+        }
+        all_docs[[length(all_docs) + 1]] <- d
+      }
+    }
+    if (length(all_docs) > 0) {
+      result <- bind_rows(lapply(all_docs, as_tibble))
+      index_path <- file.path(OUTPUT_DIR, "rada_index.json")
+      write_json(result %>% select(-body_text), index_path,
+                 auto_unbox = TRUE, pretty = TRUE)
+      cat(sprintf("  Index updated: %s (%d documents)\n", index_path, nrow(result)))
+      return(invisible(result))
+    }
+  }
+  invisible(NULL)
 }
