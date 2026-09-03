@@ -61,40 +61,30 @@ if (!exists("doc_id")) {
   }
 }
 
-# ── Session handle for rada.gov.ua ───────────────────────
+# ── Fetch from rada.gov.ua ───────────────────────────────
 
 RADA_BASE <- "https://rada.gov.ua"
-.rada_handle <- NULL
-
-init_rada <- function() {
-  .rada_handle <<- handle(RADA_BASE)
-  cat("Initialising session for rada.gov.ua...\n")
-  tryCatch({
-    resp <- GET(RADA_BASE,
-                handle = .rada_handle,
-                user_agent(USER_AGENT),
-                timeout(REQUEST_TIMEOUT))
-    cat(sprintf("  Response: HTTP %d\n", status_code(resp)))
-    Sys.sleep(2)
-  }, error = function(e) {
-    cat(sprintf("  Warning: %s\n", e$message))
-  })
-}
 
 fetch_rada <- function(url) {
-  if (is.null(.rada_handle)) init_rada()
   Sys.sleep(runif(1, REQUEST_DELAY[1], REQUEST_DELAY[2]))
   for (attempt in seq_len(MAX_RETRIES)) {
     tryCatch({
       resp <- GET(url,
-                  handle = .rada_handle,
                   user_agent(USER_AGENT),
                   add_headers(
                     Accept          = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     `Accept-Language`= "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7"
                   ),
                   timeout(REQUEST_TIMEOUT))
+      cat(sprintf("  [ID %s] HTTP %d (%d chars)\n",
+                  sub(".*/(\\d+)\\.html$", "\\1", url),
+                  status_code(resp),
+                  nchar(content(resp, as = "text", encoding = "UTF-8"))))
       if (status_code(resp) == 404) return("404")
+      if (status_code(resp) >= 300 && status_code(resp) < 400) {
+        cat(sprintf("    Redirect: %s\n", headers(resp)$location))
+        return("404")
+      }
       if (!http_error(resp)) {
         return(content(resp, as = "text", encoding = "UTF-8"))
       }
@@ -228,7 +218,15 @@ scrape_rada_stenograms <- function(start_id = 6700, end_id = 9000,
     consecutive_404 <- 0
 
     # Check if page has actual content (not an error page)
-    if (nchar(html) < 1000 || !grepl("stenogr|Засідання|засідання", html, ignore.case = TRUE)) {
+    if (nchar(html) < 1000) {
+      cat(sprintf("  [ID %d] Skipped — too short (%d chars)\n", id, nchar(html)))
+      next
+    }
+    # Accept any substantial page from a stenogram URL
+    # (the URL path already guarantees it's a stenogram endpoint)
+    if (nchar(html) < 5000 &&
+        !grepl("стеногр|Засідання|засідання|stenogr", html, ignore.case = TRUE)) {
+      cat(sprintf("  [ID %d] Skipped — small page without stenogram keywords (%d chars)\n", id, nchar(html)))
       next
     }
 
