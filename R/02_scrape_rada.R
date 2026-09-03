@@ -106,11 +106,12 @@ parse_stenogram <- function(html_text) {
   page_text <- html_text2(page)
 
   # Body text — the stenogram content
-  # Try specific stenogram selectors first, then generic content areas
+  # .item_content and .WordSection1 are the actual containers on rada.gov.ua
   body <- ""
-  for (sel in c(".stenograma", ".steno-text", ".session_text",
-                "#stenograma", ".main-content", ".content-main",
-                ".article_content", "article", "#content", "main")) {
+  for (sel in c(".WordSection1", ".item_content", ".middle-column",
+                ".stenograma", ".steno-text", ".session_text",
+                "#stenograma", ".article_content", "article",
+                "#content", "main")) {
     el <- html_element(page, sel)
     if (!is.na(el)) {
       t <- html_text2(el)
@@ -119,11 +120,12 @@ parse_stenogram <- function(html_text) {
   }
   if (body == "") body <- page_text
 
-  # Title — look for session-specific headings, skip generic navigation
+  # Title — look for session heading in the content area
   title <- ""
-  for (sel in c(".stenograma h2", ".stenograma h1", ".main_title",
-                ".session_text h2", "article h1", "article h2",
-                "#content h1", "#content h2", "main h1")) {
+  for (sel in c(".item_content h2", ".item_content h1",
+                ".middle-column h2", ".middle-column h1",
+                ".WordSection1 h2", ".stenograma h2",
+                ".main_title")) {
     el <- html_element(page, sel)
     if (!is.na(el)) {
       t <- html_text2(el)
@@ -133,41 +135,40 @@ parse_stenogram <- function(html_text) {
       }
     }
   }
-  # If no title from selectors, try to find "Засідання" in body text
   if (title == "") {
     m <- str_match(body, "(Засідання[^\\n]{0,100})")
     if (!is.na(m[1, 1])) title <- trimws(m[1, 1])
   }
 
-  # Date — extract from the body text, not the page navigation/calendar
-  # Look for Ukrainian date patterns: "6 лютого 2018 року" etc.
+  # Date — search for Ukrainian dates in body, filtering to 2000-2025
   date_str <- NA_character_
-  # First 2000 chars of body should contain the session date
-  body_head <- substr(body, 1, 2000)
 
-  # Try "dd місяця yyyy року" pattern in body
-  m <- str_match(body_head,
-    "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")
-  if (!is.na(m[1, 1])) {
-    date_str <- parse_uk_date(m[1, 1])
-  }
-
-  # Try "Опубліковано dd.mm.yyyy" specifically (not generic dd.mm.yyyy)
-  if (is.na(date_str)) {
-    m <- str_match(page_text,
-      "Опубліковано\\s+(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
-    if (!is.na(m[1, 1])) {
-      date_str <- parse_uk_date(m[1, 2])
+  # Find all Ukrainian month dates in body and pick the first plausible one
+  all_dates <- str_match_all(body,
+    "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")[[1]]
+  if (nrow(all_dates) > 0) {
+    for (i in seq_len(nrow(all_dates))) {
+      yr <- as.integer(all_dates[i, 4])
+      if (yr >= 2000 && yr <= 2025) {
+        date_str <- parse_uk_date(all_dates[i, 1])
+        break
+      }
     }
   }
 
-  # Try dd.mm.yyyy only in body text (not full page — avoids calendar widget)
+  # Fallback: dd.mm.yyyy in body, filtered to 2000-2025
   if (is.na(date_str)) {
-    m <- str_match(body_head, "(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
-    if (!is.na(m[1, 1])) {
-      d <- parse_uk_date(m[1, 1])
-      # Only accept if it's a plausible stenogram date (2000-2025)
-      if (!is.na(d) && grepl("^20[0-2]", d)) date_str <- d
+    all_dot_dates <- str_match_all(body,
+      "(\\d{2})\\.\\s*(\\d{2})\\.\\s*(\\d{4})")[[1]]
+    if (nrow(all_dot_dates) > 0) {
+      for (i in seq_len(nrow(all_dot_dates))) {
+        yr <- as.integer(all_dot_dates[i, 4])
+        if (yr >= 2000 && yr <= 2025) {
+          date_str <- sprintf("%s-%s-%s",
+            all_dot_dates[i, 4], all_dot_dates[i, 3], all_dot_dates[i, 2])
+          break
+        }
+      }
     }
   }
 
@@ -358,24 +359,32 @@ backfill_rada_dates <- function(corpus_dir = CORPUS_DIR, overwrite = FALSE) {
     body <- doc$body_text
     if (is.null(body) || nchar(body) < 50) next
 
-    # Search the first 3000 chars for Ukrainian date patterns
-    snippet <- substr(body, 1, 3000)
     new_date <- NA_character_
 
-    # Pattern 1: "6 лютого 2018 року" or "15 грудня 2024"
-    m <- str_match(snippet,
-      "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")
-    if (!is.na(m[1, 1])) {
-      new_date <- parse_uk_date(m[1, 1])
+    # Search ALL Ukrainian month dates in full body, take first in 2000-2025
+    all_dates <- str_match_all(body,
+      "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")[[1]]
+    if (nrow(all_dates) > 0) {
+      for (i in seq_len(nrow(all_dates))) {
+        yr <- as.integer(all_dates[i, 4])
+        if (yr >= 2000 && yr <= 2025) {
+          new_date <- parse_uk_date(all_dates[i, 1])
+          break
+        }
+      }
     }
 
-    # Pattern 2: dd.mm.yyyy in body (not from calendar widget)
+    # Fallback: dd.mm.yyyy in full body, filtered to 2000-2025
     if (is.na(new_date)) {
-      m <- str_match(snippet, "(\\d{2})\\.\\s*(\\d{2})\\.\\s*(\\d{4})")
-      if (!is.na(m[1, 1])) {
-        yr <- as.integer(m[1, 4])
-        if (yr >= 2000 && yr <= 2025) {
-          new_date <- sprintf("%s-%s-%s", m[1, 4], m[1, 3], m[1, 2])
+      all_dot <- str_match_all(body,
+        "(\\d{2})\\.\\s*(\\d{2})\\.\\s*(\\d{4})")[[1]]
+      if (nrow(all_dot) > 0) {
+        for (i in seq_len(nrow(all_dot))) {
+          yr <- as.integer(all_dot[i, 4])
+          if (yr >= 2000 && yr <= 2025) {
+            new_date <- sprintf("%s-%s-%s", all_dot[i, 4], all_dot[i, 3], all_dot[i, 2])
+            break
+          }
         }
       }
     }
