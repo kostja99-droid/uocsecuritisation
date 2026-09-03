@@ -238,7 +238,20 @@ fetch_poroshenko_articles <- function(csv_path, source = "risu.ua",
   if (!requireNamespace("digest", quietly = TRUE)) install.packages("digest")
   dir.create(CORPUS_DIR, recursive = TRUE, showWarnings = FALSE)
 
-  links <- read.csv(csv_path, stringsAsFactors = FALSE)
+  links <- read.csv(csv_path, stringsAsFactors = FALSE, quote = "\"")
+  # Clean URLs and titles: strip stray quotes, whitespace, timestamps
+  links$url <- trimws(gsub('^"|"$', '', links$url))
+  if ("title" %in% names(links)) {
+    links$title <- trimws(gsub('^"|"$', '', links$title))
+    # Remove trailing date/timestamps (e.g. "30.11.2015, 11:18")
+    links$title <- sub("\\s*\\d{2}\\.\\d{2}\\.\\d{4},?\\s*\\d{2}:\\d{2}\\s*$",
+                        "", links$title)
+  } else {
+    links$title <- ""
+  }
+  # Drop rows with invalid URLs
+  links <- links[grepl("^https?://", links$url), , drop = FALSE]
+
   cat(sprintf("\n%s\nFetching %d articles from %s\n%s\n",
               strrep("=", 60), nrow(links), source, strrep("=", 60)))
 
@@ -251,7 +264,7 @@ fetch_poroshenko_articles <- function(csv_path, source = "risu.ua",
   all_docs <- list()
   for (i in seq_len(nrow(links))) {
     url   <- links$url[i]
-    title <- links$title[i]
+    title <- if (is.na(links$title[i])) "" else links$title[i]
     did   <- doc_id(url)
     doc_path <- file.path(CORPUS_DIR, paste0(did, ".json"))
 
