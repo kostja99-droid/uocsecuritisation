@@ -230,13 +230,27 @@ scrape_rada_stenograms <- function(start_id = 6700, end_id = 9000,
       next
     }
 
+    # Show page title for diagnostics
+    title_match <- regmatches(html, regexpr("<title>[^<]+</title>", html))
+    if (length(title_match) > 0) {
+      cat(sprintf("  [ID %d] Page <title>: %s\n", id,
+                  substr(gsub("</?title>", "", title_match[1]), 1, 80)))
+    }
+
     article <- parse_stenogram(html)
     date_str <- article$date
+    cat(sprintf("  [ID %d] Parsed: title='%s', date='%s', body=%d chars\n",
+                id,
+                substr(if (is.null(article$title)) "" else article$title, 1, 50),
+                if (is.na(date_str)) "NA" else date_str,
+                nchar(article$body_text)))
 
     # Date range filter
     if (!is.na(date_str)) {
       doc_dt <- tryCatch(as.Date(date_str), error = function(e) NA)
       if (!is.na(doc_dt) && (doc_dt < start_dt || doc_dt > end_dt)) {
+        cat(sprintf("  [ID %d] Skipped — date %s outside range %s to %s\n",
+                    id, date_str, start_date, end_date))
         next
       }
     }
