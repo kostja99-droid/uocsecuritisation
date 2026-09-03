@@ -96,6 +96,77 @@ estimate_tokens <- function(text) {
   as.integer(n_words * 3.5)
 }
 
+# ── Smart truncation: keep only UOC-relevant sections ────
+# Splits text into sentences, finds those containing UOC
+# terms, and keeps a window of context around each hit.
+# Short documents (< max_words) are returned as-is.
+extract_relevant_sections <- function(text, max_words = 2000, context_sentences = 10) {
+  words <- strsplit(text, "\\s+")[[1]]
+  if (length(words) <= max_words) return(text)
+
+  # Split into sentences (Ukrainian period/!/? followed by space + capital or newline)
+  sentences <- strsplit(text, "(?<=[.!?\\n])\\s+(?=[А-ЯІЇЄҐA-Z\"])", perl = TRUE)[[1]]
+  sentences <- trimws(sentences)
+  sentences <- sentences[nchar(sentences) > 0]
+
+  if (length(sentences) == 0) return(text)
+
+  # Find which sentences contain UOC-relevant terms
+  hit_indices <- which(sapply(sentences, function(s) {
+    any(str_detect(s, fixed(RELEVANCE_TERMS)))
+  }))
+
+  if (length(hit_indices) == 0) {
+    return(paste(words[1:min(max_words, length(words))], collapse = " "))
+  }
+
+  # Expand each hit to include context_sentences before and after
+  keep <- integer()
+  for (idx in hit_indices) {
+    window_start <- max(1, idx - context_sentences)
+    window_end <- min(length(sentences), idx + context_sentences)
+    keep <- c(keep, window_start:window_end)
+  }
+  keep <- sort(unique(keep))
+
+  # Build output with section breaks where gaps exist
+  sections <- list()
+  current_section <- keep[1]
+  section_start <- keep[1]
+
+  for (i in seq_along(keep)) {
+    if (i > 1 && keep[i] > keep[i - 1] + 1) {
+      sections[[length(sections) + 1]] <- list(
+        start = section_start, end = keep[i - 1]
+      )
+      section_start <- keep[i]
+    }
+  }
+  sections[[length(sections) + 1]] <- list(
+    start = section_start, end = keep[length(keep)]
+  )
+
+  # Assemble with markers
+  parts <- character()
+  for (sec in sections) {
+    chunk <- paste(sentences[sec$start:sec$end], collapse = " ")
+    if (sec$start > 1) chunk <- paste0("[...] ", chunk)
+    if (sec$end < length(sentences)) chunk <- paste0(chunk, " [...]")
+    parts <- c(parts, chunk)
+  }
+
+  result <- paste(parts, collapse = "\n\n---\n\n")
+
+  # Final safety: if still too long, hard-truncate
+  result_words <- strsplit(result, "\\s+")[[1]]
+  if (length(result_words) > max_words * 1.5) {
+    result <- paste(result_words[1:as.integer(max_words * 1.5)], collapse = " ")
+    result <- paste0(result, "\n[... TRUNCATED ...]")
+  }
+
+  result
+}
+
 # ── Load and prepare corpus ──────────────────────────────
 load_and_filter_corpus <- function(corpus_dir = CORPUS_DIR) {
   if (!dir.exists(corpus_dir)) {
@@ -130,20 +201,34 @@ load_and_filter_corpus <- function(corpus_dir = CORPUS_DIR) {
       next
     }
 
+    truncated <- extract_relevant_sections(cleaned)
+
     docs[[length(docs) + 1]] <- list(
       id           = if (!is.null(d$id)) d$id else basename(f),
       title        = title,
       date         = if (!is.null(d$date) && !is.na(d$date)) d$date else "unknown",
       source       = if (!is.null(d$source)) d$source else "unknown",
       content_type = if (!is.null(d$content_type)) d$content_type else "unknown",
-      body         = cleaned,
-      tokens_est   = estimate_tokens(cleaned)
+      body         = truncated,
+      tokens_est   = estimate_tokens(truncated),
+      original_words = length(strsplit(cleaned, "\\s+")[[1]]),
+      truncated_words = length(strsplit(truncated, "\\s+")[[1]])
     )
   }
 
   cat(sprintf("  UOC-relevant: %d\n", length(docs)))
   cat(sprintf("  Skipped (empty/short): %d\n", skipped_empty))
   cat(sprintf("  Skipped (not about UOC): %d\n", skipped_irrelevant))
+
+  # Truncation summary
+  orig_total <- sum(vapply(docs, function(d) as.numeric(d$original_words), numeric(1)))
+  trunc_total <- sum(vapply(docs, function(d) as.numeric(d$truncated_words), numeric(1)))
+  n_truncated <- sum(vapply(docs, function(d) d$original_words > d$truncated_words, logical(1)))
+  cat(sprintf("\n  Smart truncation: %d docs trimmed\n", n_truncated))
+  cat(sprintf("  Original total: %s words -> Truncated: %s words (%.0f%% reduction)\n",
+              format(as.integer(orig_total), big.mark = ","),
+              format(as.integer(trunc_total), big.mark = ","),
+              100 * (1 - trunc_total / max(orig_total, 1))))
 
   # Sort by date
   dates <- sapply(docs, function(d) d$date)
