@@ -331,3 +331,65 @@ scrape_rada_stenograms <- function(start_id = 6700, end_id = 9000,
 
   result
 }
+
+#' Backfill missing dates in saved Rada stenogram JSON files
+#'
+#' Scans each JSON file's body_text for Ukrainian date patterns
+#' and updates the date field if it was NA.
+#'
+#' @param corpus_dir  Path to corpus directory (default CORPUS_DIR)
+#' @param overwrite   If TRUE, replace existing dates too (default FALSE)
+#' @return Number of dates filled
+backfill_rada_dates <- function(corpus_dir = CORPUS_DIR, overwrite = FALSE) {
+  json_files <- list.files(corpus_dir, pattern = "\\.json$", full.names = TRUE)
+  filled <- 0
+  checked <- 0
+
+  for (f in json_files) {
+    doc <- tryCatch(fromJSON(f), error = function(e) NULL)
+    if (is.null(doc)) next
+    if (!identical(doc$content_type, "rada_stenogram")) next
+    checked <- checked + 1
+
+    current_date <- doc$date
+    if (!overwrite && !is.null(current_date) && !is.na(current_date) &&
+        nchar(current_date) >= 10) next
+
+    body <- doc$body_text
+    if (is.null(body) || nchar(body) < 50) next
+
+    # Search the first 3000 chars for Ukrainian date patterns
+    snippet <- substr(body, 1, 3000)
+    new_date <- NA_character_
+
+    # Pattern 1: "6 лютого 2018 року" or "15 грудня 2024"
+    m <- str_match(snippet,
+      "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")
+    if (!is.na(m[1, 1])) {
+      new_date <- parse_uk_date(m[1, 1])
+    }
+
+    # Pattern 2: dd.mm.yyyy in body (not from calendar widget)
+    if (is.na(new_date)) {
+      m <- str_match(snippet, "(\\d{2})\\.\\s*(\\d{2})\\.\\s*(\\d{4})")
+      if (!is.na(m[1, 1])) {
+        yr <- as.integer(m[1, 4])
+        if (yr >= 2000 && yr <= 2025) {
+          new_date <- sprintf("%s-%s-%s", m[1, 4], m[1, 3], m[1, 2])
+        }
+      }
+    }
+
+    if (!is.na(new_date)) {
+      doc$date <- new_date
+      write_json(doc, f, auto_unbox = TRUE, pretty = TRUE)
+      filled <- filled + 1
+      cat(sprintf("  [%s] %s -> %s\n",
+                  basename(f), ifelse(is.na(current_date), "NA", current_date),
+                  new_date))
+    }
+  }
+
+  cat(sprintf("\nBackfill complete: %d/%d stenograms updated\n", filled, checked))
+  invisible(filled)
+}
