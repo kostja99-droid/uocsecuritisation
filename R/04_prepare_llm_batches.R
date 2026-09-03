@@ -84,10 +84,17 @@ clean_body <- function(text) {
   text
 }
 
-# ── Check UOC relevance ──────────────────────────────────
-is_uoc_relevant <- function(text, title = "") {
+# ── Check UOC relevance (density threshold) ──────────────
+# Requires 2+ distinct terms OR 3+ total mentions to qualify
+# as substantively about UOC (filters incidental mentions).
+is_uoc_relevant <- function(text, title = "", min_distinct = 2, min_total = 3) {
   combined <- paste(title, text)
-  any(str_detect(combined, fixed(RELEVANCE_TERMS)))
+  hits <- vapply(RELEVANCE_TERMS, function(term) {
+    length(str_locate_all(combined, fixed(term))[[1]]) / 2
+  }, numeric(1))
+  n_distinct <- sum(hits > 0)
+  n_total <- sum(hits)
+  n_distinct >= min_distinct || n_total >= min_total
 }
 
 # ── Estimate token count (rough: 1 Ukrainian word ~ 3.5 tokens)
@@ -100,7 +107,7 @@ estimate_tokens <- function(text) {
 # Splits text into sentences, finds those containing UOC
 # terms, and keeps a window of context around each hit.
 # Short documents (< max_words) are returned as-is.
-extract_relevant_sections <- function(text, max_words = 2000, context_sentences = 10) {
+extract_relevant_sections <- function(text, max_words = 1200, context_sentences = 5) {
   words <- strsplit(text, "\\s+")[[1]]
   if (length(words) <= max_words) return(text)
 
