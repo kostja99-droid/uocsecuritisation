@@ -292,7 +292,7 @@ prepare_llm_batches <- function(corpus_dir = CORPUS_DIR,
   # Build batches
   batches <- build_batches(docs, max_tokens)
   cat(sprintf("\nSplit into %d batches (max ~%dk tokens each)\n",
-              length(batches), max_tokens / 1000))
+              length(batches), as.integer(max_tokens / 1000)))
 
   # Write batch files
   for (i in seq_along(batches)) {
@@ -301,9 +301,9 @@ prepare_llm_batches <- function(corpus_dir = CORPUS_DIR,
     writeLines(batch_text, batch_file, useBytes = TRUE)
 
     n_docs <- length(batches[[i]])
-    est_tokens <- sum(sapply(batches[[i]], function(d) d$tokens_est))
+    est_tokens <- sum(vapply(batches[[i]], function(d) as.numeric(d$tokens_est), numeric(1)))
     cat(sprintf("  batch_%02d.txt: %d docs, ~%dk tokens\n",
-                i, n_docs, est_tokens / 1000))
+                i, n_docs, as.integer(est_tokens / 1000)))
   }
 
   # Write the codebook prompt
@@ -312,9 +312,13 @@ prepare_llm_batches <- function(corpus_dir = CORPUS_DIR,
   # Write a manifest
   manifest <- data.frame(
     batch = sprintf("batch_%02d.txt", seq_along(batches)),
-    n_docs = sapply(batches, length),
-    est_tokens = sapply(batches, function(b) sum(sapply(b, function(d) d$tokens_est))),
-    doc_ids = sapply(batches, function(b) paste(sapply(b, function(d) d$id), collapse = ", ")),
+    n_docs = vapply(batches, length, integer(1)),
+    est_tokens = vapply(batches, function(b) {
+      sum(vapply(b, function(d) as.numeric(d$tokens_est), numeric(1)))
+    }, numeric(1)),
+    doc_ids = vapply(batches, function(b) {
+      paste(vapply(b, function(d) as.character(d$id), character(1)), collapse = ", ")
+    }, character(1)),
     stringsAsFactors = FALSE
   )
   write.csv(manifest, file.path(output_dir, "manifest.csv"), row.names = FALSE)
