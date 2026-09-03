@@ -293,7 +293,14 @@ fetch_poroshenko_articles <- function(csv_path, source = "risu.ua",
     if (resume && file.exists(doc_path)) {
       cat(sprintf("  [%d/%d] [skip] %s\n", i, nrow(links),
                   substr(title, 1, 60)))
-      all_docs[[length(all_docs) + 1]] <- fromJSON(doc_path)
+      existing <- fromJSON(doc_path)
+      # Ensure no NULL fields (tibble can't handle them)
+      for (nm in names(existing)) {
+        if (is.null(existing[[nm]]) || length(existing[[nm]]) == 0) {
+          existing[[nm]] <- NA_character_
+        }
+      }
+      all_docs[[length(all_docs) + 1]] <- existing
       next
     }
 
@@ -312,7 +319,7 @@ fetch_poroshenko_articles <- function(csv_path, source = "risu.ua",
       id           = did,
       url          = url,
       title        = if (article$title != "") article$title else title,
-      date         = article$date,
+      date         = if (is.null(article$date) || length(article$date) == 0) NA_character_ else article$date,
       content_type = "poroshenko_speech",
       source       = source,
       speaker      = "Poroshenko",
