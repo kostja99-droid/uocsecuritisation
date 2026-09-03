@@ -238,19 +238,41 @@ fetch_poroshenko_articles <- function(csv_path, source = "risu.ua",
   if (!requireNamespace("digest", quietly = TRUE)) install.packages("digest")
   dir.create(CORPUS_DIR, recursive = TRUE, showWarnings = FALSE)
 
-  links <- read.csv(csv_path, stringsAsFactors = FALSE, quote = "\"")
-  # Clean URLs and titles: strip stray quotes, whitespace, timestamps
-  links$url <- trimws(gsub('^"|"$', '', links$url))
-  if ("title" %in% names(links)) {
-    links$title <- trimws(gsub('^"|"$', '', links$title))
-    # Remove trailing date/timestamps (e.g. "30.11.2015, 11:18")
-    links$title <- sub("\\s*\\d{2}\\.\\d{2}\\.\\d{4},?\\s*\\d{2}:\\d{2}\\s*$",
-                        "", links$title)
-  } else {
-    links$title <- ""
+  # Read raw lines and parse manually (browser copy() often double-escapes)
+  raw_lines <- readLines(csv_path, encoding = "UTF-8")
+  # Skip header line
+  if (grepl("url", raw_lines[1], ignore.case = TRUE)) raw_lines <- raw_lines[-1]
+
+  urls   <- character()
+  titles <- character()
+  for (line in raw_lines) {
+    if (nchar(trimws(line)) == 0) next
+    # Strip all \" escape sequences and outer quotes
+    clean <- gsub('\\\\"', '', line)
+    clean <- gsub('^"|"$', '', clean)
+    # Split on the first comma that separates URL from title
+    m <- regmatches(clean, regexpr("^(https?://[^,]+),(.*)$", clean))
+    if (length(m) == 1 && nchar(m) > 0) {
+      url_part   <- sub(",.*$", "", clean)
+      title_part <- sub("^[^,]+,", "", clean)
+    } else {
+      # Fallback: try to extract URL with regex
+      url_match <- regmatches(clean, regexpr("https?://[^,\"\\s]+", clean))
+      if (length(url_match) == 0) next
+      url_part   <- url_match[1]
+      title_part <- sub(paste0(".*", gsub("([.?])", "\\\\\\1", url_part), ",?\\s*"), "", clean)
+    }
+    url_part   <- trimws(gsub('"', '', url_part))
+    title_part <- trimws(gsub('"', '', title_part))
+    # Remove trailing timestamps (e.g. "30.11.2015, 11:18")
+    title_part <- sub("\\s*\\d{2}\\.\\d{2}\\.\\d{4},?\\s*\\d{2}:\\d{2}\\s*$",
+                       "", title_part)
+    if (grepl("^https?://", url_part)) {
+      urls   <- c(urls, url_part)
+      titles <- c(titles, title_part)
+    }
   }
-  # Drop rows with invalid URLs
-  links <- links[grepl("^https?://", links$url), , drop = FALSE]
+  links <- data.frame(url = urls, title = titles, stringsAsFactors = FALSE)
 
   cat(sprintf("\n%s\nFetching %d articles from %s\n%s\n",
               strrep("=", 60), nrow(links), source, strrep("=", 60)))
