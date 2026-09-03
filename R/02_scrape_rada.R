@@ -103,33 +103,10 @@ fetch_rada <- function(url) {
 
 parse_stenogram <- function(html_text) {
   page <- read_html(html_text)
-
-  # Title (e.g. "Засідання 1")
-  title <- ""
-  for (sel in c("h1", "h2", ".main_title", ".stenograma h2")) {
-    el <- html_element(page, sel)
-    if (!is.na(el)) {
-      t <- html_text2(el)
-      if (nchar(t) > 3 && nchar(t) < 200) { title <- t; break }
-    }
-  }
-
-  # Date — look for "Опубліковано dd. mm. yyyy" or similar
-  date_str <- NA_character_
   page_text <- html_text2(page)
-  # Pattern: "Опубліковано dd. mm. yyyy" or just "dd.mm.yyyy"
-  m <- str_match(page_text, "Опубліковано\\s+(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
-  if (!is.na(m[1, 1])) {
-    date_str <- parse_uk_date(m[1, 2])
-  }
-  if (is.na(date_str)) {
-    m <- str_match(page_text, "(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
-    if (!is.na(m[1, 1])) {
-      date_str <- parse_uk_date(m[1, 2])
-    }
-  }
 
   # Body text — the stenogram content
+  # Try specific stenogram selectors first, then generic content areas
   body <- ""
   for (sel in c(".stenograma", ".steno-text", ".session_text",
                 "#stenograma", ".main-content", ".content-main",
@@ -141,6 +118,58 @@ parse_stenogram <- function(html_text) {
     }
   }
   if (body == "") body <- page_text
+
+  # Title — look for session-specific headings, skip generic navigation
+  title <- ""
+  for (sel in c(".stenograma h2", ".stenograma h1", ".main_title",
+                ".session_text h2", "article h1", "article h2",
+                "#content h1", "#content h2", "main h1")) {
+    el <- html_element(page, sel)
+    if (!is.na(el)) {
+      t <- html_text2(el)
+      if (nchar(t) > 3 && nchar(t) < 200 &&
+          !grepl("Календар|календар|Головна|головна", t)) {
+        title <- t; break
+      }
+    }
+  }
+  # If no title from selectors, try to find "Засідання" in body text
+  if (title == "") {
+    m <- str_match(body, "(Засідання[^\\n]{0,100})")
+    if (!is.na(m[1, 1])) title <- trimws(m[1, 1])
+  }
+
+  # Date — extract from the body text, not the page navigation/calendar
+  # Look for Ukrainian date patterns: "6 лютого 2018 року" etc.
+  date_str <- NA_character_
+  # First 2000 chars of body should contain the session date
+  body_head <- substr(body, 1, 2000)
+
+  # Try "dd місяця yyyy року" pattern in body
+  m <- str_match(body_head,
+    "(\\d{1,2})\\s+(січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня)\\s+(\\d{4})")
+  if (!is.na(m[1, 1])) {
+    date_str <- parse_uk_date(m[1, 1])
+  }
+
+  # Try "Опубліковано dd.mm.yyyy" specifically (not generic dd.mm.yyyy)
+  if (is.na(date_str)) {
+    m <- str_match(page_text,
+      "Опубліковано\\s+(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
+    if (!is.na(m[1, 1])) {
+      date_str <- parse_uk_date(m[1, 2])
+    }
+  }
+
+  # Try dd.mm.yyyy only in body text (not full page — avoids calendar widget)
+  if (is.na(date_str)) {
+    m <- str_match(body_head, "(\\d{2}\\.\\s*\\d{2}\\.\\s*\\d{4})")
+    if (!is.na(m[1, 1])) {
+      d <- parse_uk_date(m[1, 1])
+      # Only accept if it's a plausible stenogram date (2000-2025)
+      if (!is.na(d) && grepl("^20[0-2]", d)) date_str <- d
+    }
+  }
 
   list(title = title, date = date_str, body_text = body)
 }
