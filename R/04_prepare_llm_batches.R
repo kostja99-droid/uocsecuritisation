@@ -202,8 +202,11 @@ load_and_filter_corpus <- function(corpus_dir = CORPUS_DIR) {
     }
 
     title <- if (!is.null(d$title)) d$title else ""
+    source <- if (!is.null(d$source)) d$source else "unknown"
 
-    if (!is_uoc_relevant(cleaned, title)) {
+    # Pre-selected sources (hand-curated for UOC relevance) skip density filter
+    curated_sources <- c("risu.ua", "ssu.gov.ua")
+    if (!(source %in% curated_sources) && !is_uoc_relevant(cleaned, title)) {
       skipped_irrelevant <- skipped_irrelevant + 1
       next
     }
@@ -214,7 +217,7 @@ load_and_filter_corpus <- function(corpus_dir = CORPUS_DIR) {
       id           = if (!is.null(d$id)) d$id else basename(f),
       title        = title,
       date         = if (!is.null(d$date) && !is.na(d$date)) d$date else "unknown",
-      source       = if (!is.null(d$source)) d$source else "unknown",
+      source       = source,
       content_type = if (!is.null(d$content_type)) d$content_type else "unknown",
       body         = truncated,
       tokens_est   = estimate_tokens(truncated),
