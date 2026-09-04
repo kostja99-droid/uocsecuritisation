@@ -213,12 +213,15 @@ load_and_filter_corpus <- function(corpus_dir = CORPUS_DIR) {
 
     truncated <- extract_relevant_sections(cleaned)
 
+    speaker <- if (!is.null(d$speaker_attribution)) d$speaker_attribution else ""
+
     docs[[length(docs) + 1]] <- list(
       id           = if (!is.null(d$id)) d$id else basename(f),
       title        = title,
       date         = if (!is.null(d$date) && !is.na(d$date)) d$date else "unknown",
       source       = source,
       content_type = if (!is.null(d$content_type)) d$content_type else "unknown",
+      speaker_attribution = speaker,
       body         = truncated,
       tokens_est   = estimate_tokens(truncated),
       original_words = length(strsplit(cleaned, "\\s+")[[1]]),
@@ -288,8 +291,10 @@ format_batch <- function(batch, batch_num) {
                      batch_num, length(batch), strrep("=", 60))
 
   doc_texts <- sapply(batch, function(d) {
-    sprintf("=== DOC %s | %s | %s | %s ===\n%s",
-            d$id, d$date, d$source, d$title, d$body)
+    speaker_tag <- if (nchar(d$speaker_attribution) > 0)
+      sprintf(" | speaker: %s", d$speaker_attribution) else ""
+    sprintf("=== DOC %s | %s | %s%s | %s ===\n%s",
+            d$id, d$date, d$source, speaker_tag, d$title, d$body)
   })
 
   paste0(header, paste(doc_texts, collapse = "\n\n"))
@@ -338,12 +343,19 @@ Example:
 ]
 ```
 
+SPEAKER ATTRIBUTION:
+Some documents carry a "speaker: poroshenko" tag in their header. This means the article contains direct speech or statements attributable to former President Petro Poroshenko. When coding these:
+- Poroshenko is a potential securitising actor — his statements framing the UOC-MP as a threat and calling for extraordinary measures are securitising moves.
+- Distinguish his direct speech from journalist commentary within the same article.
+Documents from risu.ua without a speaker tag are news/analysis articles about the church — they may contain evidence of securitising discourse by other actors, but should not be attributed to Poroshenko.
+
 GUIDELINES:
 - Read each document carefully in full before coding.
 - A document may contain multiple securitising moves — code each one separately.
 - Distinguish between: reporting on events (not securitising) vs. framing events as threats requiring action (securitising).
 - SBU press releases often describe enforcement actions — code the framing language, not the factual reporting.
 - Rada stenograms may contain speeches by multiple deputies — attribute the securitising move to the document, not the speaker (speaker attribution can be done later).
+- For risu.ua articles with speaker: poroshenko, focus on Poroshenko\'s own words as the securitising actor; for those without a speaker tag, code any securitising framing present but note the actual speaker in coder_notes if identifiable.
 - Be conservative: when in doubt, code as is_securitising: false with confidence: 1.
 - For very long documents, focus on the passages most relevant to UOC-MP securitisation.
 
