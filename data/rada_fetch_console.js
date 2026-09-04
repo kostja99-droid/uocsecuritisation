@@ -41,7 +41,8 @@
   console.log("This may take a while. Do not close this tab.");
 
   for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
+    // Rewrite to www.rada.gov.ua to match the browser's origin
+    const url = urls[i].replace("://rada.gov.ua", "://www.rada.gov.ua");
     const idMatch = url.match(/\/(\d+)\.html$/);
     const radaId = idMatch ? idMatch[1] : url.split("/").pop();
     console.log(`[${i+1}/${urls.length}] ID ${radaId}`);
