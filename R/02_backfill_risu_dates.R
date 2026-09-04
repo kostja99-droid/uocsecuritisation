@@ -88,10 +88,10 @@ backfill_risu_dates <- function(corpus_dir = CORPUS_DIR) {
   for (f in risu_files) {
     d <- fromJSON(f)
 
-    has_date <- tryCatch({
+    has_date <- isTRUE(tryCatch({
       dv <- d$date
       !is.null(dv) && length(dv) == 1 && !is.na(dv[1]) && nchar(as.character(dv[1])) >= 10
-    }, error = function(e) FALSE)
+    }, error = function(e) FALSE, warning = function(w) FALSE))
     if (has_date) {
       already_dated <- already_dated + 1
       next
