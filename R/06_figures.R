@@ -280,24 +280,37 @@ generate_figures <- function(output_dir = file.path("output", "figures"),
     summarise(n = n(), .groups = "drop") %>%
     mutate(source_label = factor(source_label, levels = src_levels))
 
+  ymax_val <- max(sec_year %>% group_by(year) %>%
+    summarise(t = sum(n)) %>% pull(t))
+
   p6 <- ggplot(sec_year, aes(x = year, y = n, fill = source_label)) +
     geom_col(position = "stack", width = 0.7) +
-    annotate("rect", xmin = 2017.5, xmax = 2019.5, ymin = -Inf, ymax = Inf,
+    # J1: Autocephaly (2018-01-01 to 2019-05-19)
+    annotate("rect", xmin = 2017.5, xmax = 2019.4, ymin = -Inf, ymax = Inf,
              alpha = 0.08, fill = "#2d5a7b") +
-    annotate("text", x = 2018.5, y = max(sec_year %>% group_by(year) %>%
-             summarise(t = sum(n)) %>% pull(t)) * 0.95,
-             label = "J1", size = 3, color = "#2d5a7b", fontface = "bold") +
-    annotate("rect", xmin = 2021.7, xmax = 2024.1, ymin = -Inf, ymax = Inf,
+    annotate("text", x = 2018.5, y = ymax_val * 0.95,
+             label = "J1: Autocephaly", size = 2.8, color = "#2d5a7b", fontface = "bold") +
+    # J2: Full-scale invasion (2022-02-24 to 2023-12-31)
+    annotate("rect", xmin = 2021.7, xmax = 2024.0, ymin = -Inf, ymax = Inf,
              alpha = 0.08, fill = "#d4803a") +
-    annotate("text", x = 2022.9, y = max(sec_year %>% group_by(year) %>%
-             summarise(t = sum(n)) %>% pull(t)) * 0.95,
-             label = "J2–J3", size = 3, color = "#d4803a", fontface = "bold") +
+    annotate("text", x = 2022.85, y = ymax_val * 0.95,
+             label = "J2: Invasion", size = 2.8, color = "#d4803a", fontface = "bold") +
+    # J3: UOC ban law (2024-01-01 to 2024-12-31)
+    annotate("rect", xmin = 2023.6, xmax = 2025.0, ymin = -Inf, ymax = Inf,
+             alpha = 0.06, fill = "#4a9e6d") +
+    annotate("text", x = 2024.3, y = ymax_val * 0.85,
+             label = "J3: Law", size = 2.8, color = "#4a9e6d", fontface = "bold") +
+    # J4: Enforcement (2025-01-01 to 2025-12-31)
+    annotate("rect", xmin = 2024.6, xmax = 2025.5, ymin = -Inf, ymax = Inf,
+             alpha = 0.06, fill = "#6b3a8a") +
+    annotate("text", x = 2025.0, y = ymax_val * 0.75,
+             label = "J4: Enforcement", size = 2.5, color = "#6b3a8a", fontface = "bold") +
     scale_fill_manual(values = SOURCE_COLORS) +
     scale_x_continuous(breaks = year_min:2025) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
     labs(
       title = "Securitising Speech Acts Over Time",
-      subtitle = "By source and year (excludes undated SBU documents)",
+      subtitle = "By source, year, and critical juncture (excludes undated SBU documents)",
       x = NULL, y = "Securitising claims"
     ) +
     theme_thesis() +
