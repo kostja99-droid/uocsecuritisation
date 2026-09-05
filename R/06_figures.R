@@ -2,8 +2,9 @@
 # 06_figures.R — Recreate methodology figures from coded data
 #
 # Reads llm_coded_full.csv and llm_coded_securitising.csv,
-# produces pipeline funnel, source breakdown, securitisation
-# type, and temporal distribution figures.
+# filters to 2018+ (thesis scope), splits Poroshenko from
+# Zelensky, and produces pipeline funnel, source breakdown,
+# securitisation type, and temporal distribution figures.
 #
 # Usage:
 #   source("R/06_figures.R")
@@ -17,33 +18,35 @@ library(scales)
 
 PIPELINE_NUMBERS <- list(
   scraped = c(
-    "President"  = 1780,
-    "Rada"       = 2300,
-    "SBU"        = 142,
-    "RISU"       = 268
+    "Zelensky"    = 1780,
+    "Poroshenko"  = 268,
+    "Rada"        = 2300,
+    "SBU"         = 142
   ),
   relevant = c(
-    "President"  = 56,
-    "Rada"       = 611,
-    "SBU"        = 142,
-    "RISU"       = 262
+    "Zelensky"    = 56,
+    "Poroshenko"  = 196,
+    "Rada"        = 611,
+    "SBU"         = 142
   )
 )
 
 SOURCE_COLORS <- c(
-  "President"  = "#2d5a7b",
-  "Rada"       = "#7b5a2d",
-  "SBU"        = "#6b3a8a",
-  "RISU"       = "#2d7b5a"
+  "Zelensky"    = "#2d5a7b",
+  "Poroshenko"  = "#3d8a9e",
+  "Rada"        = "#7b5a2d",
+  "SBU"         = "#6b3a8a"
 )
 
-SOURCE_MAP <- c(
-  "president.gov.ua" = "President",
-  "rada.gov.ua"      = "Rada",
-  "ssu.gov.ua"       = "SBU",
-  "sbu.gov.ua"       = "SBU",
-  "risu.ua"          = "RISU"
-)
+assign_source <- function(doc_content_type) {
+  case_when(
+    doc_content_type == "speech"             ~ "Zelensky",
+    doc_content_type == "poroshenko_speech"  ~ "Poroshenko",
+    doc_content_type == "rada_stenogram"     ~ "Rada",
+    doc_content_type == "sbu_press_release"  ~ "SBU",
+    TRUE                                     ~ "Other"
+  )
+}
 
 theme_thesis <- function() {
   theme_minimal(base_size = 12, base_family = "sans") +
@@ -59,14 +62,30 @@ theme_thesis <- function() {
     )
 }
 
-generate_figures <- function(output_dir = file.path("output", "figures")) {
+generate_figures <- function(output_dir = file.path("output", "figures"),
+                              year_min = 2018) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  coded <- read.csv("output/llm_coded_full.csv", stringsAsFactors = FALSE)
-  sec   <- read.csv("output/llm_coded_securitising.csv", stringsAsFactors = FALSE)
+  coded_raw <- read.csv("output/llm_coded_full.csv", stringsAsFactors = FALSE)
+  sec_raw   <- read.csv("output/llm_coded_securitising.csv", stringsAsFactors = FALSE)
 
-  coded$source_label <- SOURCE_MAP[coded$doc_source]
-  sec$source_label   <- SOURCE_MAP[sec$doc_source]
+  coded_raw$source_label <- assign_source(coded_raw$doc_content_type)
+  sec_raw$source_label   <- assign_source(sec_raw$doc_content_type)
+
+  # Filter to thesis scope (2018+); keep undated SBU docs
+  in_scope <- function(year_val) {
+    is.na(year_val) | year_val == "NA" | year_val == "" |
+      (suppressWarnings(!is.na(as.integer(year_val))) & as.integer(year_val) >= year_min)
+  }
+
+  coded <- coded_raw %>% filter(in_scope(year))
+  sec   <- sec_raw   %>% filter(in_scope(year))
+
+  cat(sprintf("Filtered to %d+: %d claims (%d securitising), dropping %d pre-%d claims\n",
+              year_min, nrow(coded), nrow(sec),
+              nrow(coded_raw) - nrow(coded), year_min))
+
+  src_levels <- c("Zelensky", "Poroshenko", "Rada", "SBU")
 
   # ── Figure 1: Pipeline funnel by source ──────────────────
 
@@ -107,7 +126,7 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
       stage = factor(stage,
         levels = c("scraped", "relevant", "claims", "sec_claims"),
         labels = c("Scraped", "UOC-Relevant", "Claims Coded", "Securitising")),
-      source = factor(source, levels = c("President", "Rada", "SBU", "RISU"))
+      source = factor(source, levels = src_levels)
     )
 
   p1 <- ggplot(pipeline_long, aes(x = stage, y = count, fill = source)) +
@@ -119,7 +138,8 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
     scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.15))) +
     labs(
       title = "Pipeline Funnel by Source",
-      subtitle = "Document flow from scraping to securitisation coding",
+      subtitle = sprintf("Document flow from scraping to securitisation coding (%d–%d)",
+                          year_min, 2025),
       x = NULL, y = "Count"
     ) +
     theme_thesis()
@@ -128,26 +148,29 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
          width = 10, height = 6, dpi = 300, bg = "white")
   cat("Saved fig1_pipeline_funnel.png\n")
 
-  # ── Figure 2: Source breakdown of UOC-relevant corpus ────
+  # ── Figure 2: Source breakdown of coded claims ─────────
 
-  relevant_df <- data.frame(
-    source = factor(names(PIPELINE_NUMBERS$relevant),
-                    levels = rev(c("Rada", "RISU", "SBU", "President"))),
-    docs = unname(PIPELINE_NUMBERS$relevant)
-  ) %>%
-    mutate(pct = round(100 * docs / sum(docs), 1))
+  source_df <- coded %>%
+    group_by(source_label) %>%
+    summarise(claims = n(), docs = n_distinct(doc_id), .groups = "drop") %>%
+    arrange(desc(claims)) %>%
+    mutate(
+      source_label = factor(source_label, levels = rev(source_label)),
+      pct = round(100 * claims / sum(claims), 1)
+    )
 
-  p2 <- ggplot(relevant_df, aes(x = source, y = docs, fill = source)) +
+  p2 <- ggplot(source_df, aes(x = source_label, y = claims, fill = source_label)) +
     geom_col(width = 0.6) +
-    geom_text(aes(label = paste0(docs, " (", pct, "%)")),
+    geom_text(aes(label = paste0(claims, " (", pct, "%)")),
               hjust = -0.1, size = 3.5) +
     scale_fill_manual(values = SOURCE_COLORS) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +
     coord_flip() +
     labs(
-      title = "UOC-Relevant Documents by Source",
-      subtitle = paste0("n = ", comma(sum(relevant_df$docs)), " documents after relevance filtering"),
-      x = NULL, y = "Documents"
+      title = "Coded Claims by Source",
+      subtitle = paste0("n = ", comma(sum(source_df$claims)),
+                        " claims across ", comma(sum(source_df$docs)), " documents"),
+      x = NULL, y = "Claims"
     ) +
     theme_thesis() +
     theme(legend.position = "none")
@@ -165,14 +188,12 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
         securitisation_type == "ontological" ~ "Ontological",
         securitisation_type == "both" ~ "Both",
         TRUE ~ "Other"
-      )
+      ),
+      source_label = factor(source_label, levels = src_levels)
     ) %>%
     group_by(source_label, sec_type) %>%
     summarise(n = n(), .groups = "drop") %>%
-    mutate(
-      source_label = factor(source_label, levels = c("President", "Rada", "SBU", "RISU")),
-      sec_type = factor(sec_type, levels = c("Material", "Ontological", "Both", "Other"))
-    )
+    mutate(sec_type = factor(sec_type, levels = c("Material", "Ontological", "Both", "Other")))
 
   type_colors <- c("Material" = "#d4803a", "Ontological" = "#2d5a7b",
                     "Both" = "#4a9e6d", "Other" = "#999999")
@@ -184,7 +205,7 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
     scale_fill_manual(values = type_colors) +
     labs(
       title = "Securitisation Type by Source",
-      subtitle = paste0("n = ", nrow(sec), " securitising speech acts"),
+      subtitle = paste0("n = ", nrow(sec), " securitising speech acts (2018+)"),
       x = NULL, y = "Securitising claims"
     ) +
     theme_thesis()
@@ -254,10 +275,10 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
   sec_year <- sec %>%
     filter(!is.na(year) & year != "NA" & year != "") %>%
     mutate(year = as.integer(year)) %>%
-    filter(year >= 2014 & year <= 2025) %>%
+    filter(year >= year_min & year <= 2025) %>%
     group_by(year, source_label) %>%
     summarise(n = n(), .groups = "drop") %>%
-    mutate(source_label = factor(source_label, levels = c("President", "Rada", "SBU", "RISU")))
+    mutate(source_label = factor(source_label, levels = src_levels))
 
   p6 <- ggplot(sec_year, aes(x = year, y = n, fill = source_label)) +
     geom_col(position = "stack", width = 0.7) +
@@ -270,9 +291,9 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
              alpha = 0.08, fill = "#d4803a") +
     annotate("text", x = 2022.9, y = max(sec_year %>% group_by(year) %>%
              summarise(t = sum(n)) %>% pull(t)) * 0.95,
-             label = "J2-J3", size = 3, color = "#d4803a", fontface = "bold") +
+             label = "J2–J3", size = 3, color = "#d4803a", fontface = "bold") +
     scale_fill_manual(values = SOURCE_COLORS) +
-    scale_x_continuous(breaks = 2014:2025) +
+    scale_x_continuous(breaks = year_min:2025) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
     labs(
       title = "Securitising Speech Acts Over Time",
@@ -317,7 +338,7 @@ generate_figures <- function(output_dir = file.path("output", "figures")) {
 
   # ── Summary table ───────────────────────────────────────
 
-  cat(sprintf("\n%s\nSUMMARY\n%s\n", strrep("=", 50), strrep("=", 50)))
+  cat(sprintf("\n%s\nSUMMARY (%d–2025)\n%s\n", strrep("=", 50), year_min, strrep("=", 50)))
   cat(sprintf("Total claims coded: %d\n", nrow(coded)))
   cat(sprintf("Securitising claims: %d (%.1f%%)\n",
               nrow(sec), 100 * nrow(sec) / nrow(coded)))
