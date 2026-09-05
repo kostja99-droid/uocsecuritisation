@@ -107,7 +107,7 @@ merge_llm_results <- function(results_dir = file.path("data", "llm_results"),
     if (!is.null(d) && !is.null(d$id)) {
       doc_meta[[d$id]] <- list(
         title        = if (!is.null(d$title)) d$title else "",
-        date         = if (!is.null(d$date) && !is.na(d$date)) d$date else NA_character_,
+        date         = if (!is.null(d$date) && length(d$date) > 0 && !is.na(d$date[1])) d$date[1] else NA_character_,
         source       = if (!is.null(d$source)) d$source else "",
         content_type = if (!is.null(d$content_type)) d$content_type else "",
         url          = if (!is.null(d$url)) d$url else ""
