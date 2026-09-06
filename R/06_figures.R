@@ -20,7 +20,6 @@ PIPELINE_NUMBERS <- list(
   scraped = c(
     "Zelensky"    = 1780,
     "Poroshenko"  = 268,
-    "RISU"        = NA,
     "Rada"        = 2300,
     "SBU"         = 142,
     "DESS"        = 860
@@ -28,7 +27,6 @@ PIPELINE_NUMBERS <- list(
   relevant = c(
     "Zelensky"    = 56,
     "Poroshenko"  = 196,
-    "RISU"        = NA,
     "Rada"        = 611,
     "SBU"         = 142,
     "DESS"        = NA
@@ -40,8 +38,7 @@ SOURCE_COLORS <- c(
   "Poroshenko"  = "#3d8a9e",
   "Rada"        = "#7b5a2d",
   "SBU"         = "#6b3a8a",
-  "DESS"        = "#8a6b3a",
-  "RISU"        = "#5a7b6b"
+  "DESS"        = "#8a6b3a"
 )
 
 assign_source <- function(doc_content_type) {
@@ -51,7 +48,6 @@ assign_source <- function(doc_content_type) {
     doc_content_type == "rada_stenogram"     ~ "Rada",
     doc_content_type == "sbu_press_release"  ~ "SBU",
     doc_content_type == "dess_statement"     ~ "DESS",
-    doc_content_type == "risu_article"       ~ "RISU",
     TRUE                                     ~ "Other"
   )
 }
@@ -93,7 +89,7 @@ generate_figures <- function(output_dir = file.path("output", "figures"),
               year_min, nrow(coded), nrow(sec),
               nrow(coded_raw) - nrow(coded), year_min))
 
-  src_levels <- c("Zelensky", "Poroshenko", "RISU", "Rada", "SBU", "DESS")
+  src_levels <- c("Zelensky", "Poroshenko", "Rada", "SBU", "DESS")
 
   # ── Figure 1: Pipeline funnel by source ──────────────────
 
