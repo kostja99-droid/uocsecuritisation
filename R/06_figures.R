@@ -21,13 +21,15 @@ PIPELINE_NUMBERS <- list(
     "Zelensky"    = 1780,
     "Poroshenko"  = 268,
     "Rada"        = 2300,
-    "SBU"         = 142
+    "SBU"         = 142,
+    "DESS"        = 860
   ),
   relevant = c(
     "Zelensky"    = 56,
     "Poroshenko"  = 196,
     "Rada"        = 611,
-    "SBU"         = 142
+    "SBU"         = 142,
+    "DESS"        = NA
   )
 )
 
@@ -35,7 +37,8 @@ SOURCE_COLORS <- c(
   "Zelensky"    = "#2d5a7b",
   "Poroshenko"  = "#3d8a9e",
   "Rada"        = "#7b5a2d",
-  "SBU"         = "#6b3a8a"
+  "SBU"         = "#6b3a8a",
+  "DESS"        = "#8a6b3a"
 )
 
 assign_source <- function(doc_content_type) {
@@ -44,6 +47,7 @@ assign_source <- function(doc_content_type) {
     doc_content_type == "poroshenko_speech"  ~ "Poroshenko",
     doc_content_type == "rada_stenogram"     ~ "Rada",
     doc_content_type == "sbu_press_release"  ~ "SBU",
+    doc_content_type == "dess_statement"     ~ "DESS",
     TRUE                                     ~ "Other"
   )
 }
@@ -85,7 +89,7 @@ generate_figures <- function(output_dir = file.path("output", "figures"),
               year_min, nrow(coded), nrow(sec),
               nrow(coded_raw) - nrow(coded), year_min))
 
-  src_levels <- c("Zelensky", "Poroshenko", "Rada", "SBU")
+  src_levels <- c("Zelensky", "Poroshenko", "Rada", "SBU", "DESS")
 
   # ── Figure 1: Pipeline funnel by source ──────────────────
 
@@ -117,7 +121,8 @@ generate_figures <- function(output_dir = file.path("output", "figures"),
     left_join(sec_by_source, by = c("source" = "source_label")) %>%
     left_join(docs_by_source, by = c("source" = "source_label")) %>%
     left_join(sec_docs_by_source, by = c("source" = "source_label")) %>%
-    replace_na(list(claims = 0, sec_claims = 0, docs_coded = 0, sec_docs = 0))
+    replace_na(list(claims = 0, sec_claims = 0, docs_coded = 0, sec_docs = 0)) %>%
+    mutate(relevant = ifelse(is.na(relevant), docs_coded, relevant))
 
   pipeline_long <- pipeline %>%
     select(source, scraped, relevant, claims, sec_claims) %>%
