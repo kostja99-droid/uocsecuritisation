@@ -33,6 +33,12 @@ CATEGORIES <- list(
     path     = "/news",
     type     = "sbu_press_release",
     source   = "sbu.gov.ua"
+  ),
+  dess_statements = list(
+    label    = "DESS statements",
+    path     = "/category/news/",
+    type     = "dess_statement",
+    source   = "dess.gov.ua"
   )
 )
 
