@@ -354,6 +354,7 @@ GUIDELINES:
 - A document may contain multiple securitising moves — code each one separately.
 - Distinguish between: reporting on events (not securitising) vs. framing events as threats requiring action (securitising).
 - SBU press releases often describe enforcement actions — code the framing language, not the factual reporting.
+- DESS (dess.gov.ua) is the State Service of Ukraine for Ethnopolitics and Freedom of Conscience — an executive body overseeing religious organisations. Its statements may contain regulatory framing (not securitising) or securitising language linking the UOC-MP to threats. Distinguish bureaucratic reporting from securitising framing.
 - Rada stenograms may contain speeches by multiple deputies — attribute the securitising move to the document, not the speaker (speaker attribution can be done later).
 - For risu.ua articles with speaker: poroshenko, focus on Poroshenko\'s own words as the securitising actor; for those without a speaker tag, code any securitising framing present but note the actual speaker in coder_notes if identifiable.
 - Be conservative: when in doubt, code as is_securitising: false with confidence: 1.
@@ -370,15 +371,23 @@ Now analyse the following documents:
 # ── Main function ────────────────────────────────────────
 prepare_llm_batches <- function(corpus_dir = CORPUS_DIR,
                                  output_dir = file.path("data", "llm_batches"),
-                                 max_tokens = 80000) {
+                                 max_tokens = 80000,
+                                 sources = NULL) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
   cat(strrep("=", 60), "\n")
   cat("PREPARING LLM CODING BATCHES\n")
+  if (!is.null(sources)) cat(sprintf("  (filtered to: %s)\n", paste(sources, collapse = ", ")))
   cat(strrep("=", 60), "\n\n")
 
   # Load and filter
   docs <- load_and_filter_corpus(corpus_dir)
+
+  # Optionally filter to specific sources
+  if (!is.null(sources)) {
+    docs <- Filter(function(d) d$source %in% sources, docs)
+    cat(sprintf("After source filter: %d documents\n", length(docs)))
+  }
   if (length(docs) == 0) {
     cat("No relevant documents found. Check corpus directory.\n")
     return(invisible(NULL))
